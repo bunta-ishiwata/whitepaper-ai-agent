@@ -17,17 +17,21 @@ export class AppsScriptService {
 
   /**
    * Create and bind GAS to a spreadsheet
-   * Note: The GAS code now calls OpenAI API directly (no backend API URL needed)
+   * Note: The GAS code calls Backend API for OpenAI processing
    */
   async createAndBindScript(
-    spreadsheetId: string
+    spreadsheetId: string,
+    backendApiUrl: string
   ): Promise<{ scriptId: string; projectUrl: string }> {
     try {
       console.log(`Creating Apps Script project for spreadsheet ${spreadsheetId}...`);
 
       // Read GAS code from file (using .js version)
       const gasCodePath = path.join(__dirname, '..', 'gas', 'Code.js');
-      const gasCode = await fs.readFile(gasCodePath, 'utf-8');
+      let gasCode = await fs.readFile(gasCodePath, 'utf-8');
+
+      // Replace placeholder with actual backend API URL
+      gasCode = gasCode.replace('BACKEND_URL_PLACEHOLDER', backendApiUrl);
 
       // Create container-bound script
       const createResponse = await this.script.projects.create({
@@ -111,7 +115,7 @@ export class AppsScriptService {
       });
 
       if (response.data.files && response.data.files.length > 0) {
-        return response.data.files[0].id || null;
+        return response.data.files[0]?.id || null;
       }
 
       return null;
