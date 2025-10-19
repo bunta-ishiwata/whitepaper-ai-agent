@@ -6,7 +6,7 @@
  */
 
 // Configuration
-const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
+const BACKEND_API_URL = 'BACKEND_URL_PLACEHOLDER'; // Will be replaced during deployment
 const BATCH_SIZE = 5; // 5行ずつバッチ処理
 const MENU_TITLE = 'Whitepaper Rewriter';
 
@@ -17,54 +17,8 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu(MENU_TITLE)
     .addItem('🔄 Rewrite all commented rows (batch: 5)', 'rewriteAllCommentedRows')
-    .addItem('⚙️ Set API Key', 'setApiKey')
-    .addItem('🔧 Set Model', 'setModel')
-    .addItem('📊 View Backlog', 'viewBacklog')
+    .addItem('📋 View Backlog', 'viewBacklog')
     .addToUi();
-}
-
-/**
- * Set OpenAI API Key
- */
-function setApiKey() {
-  const ui = SpreadsheetApp.getUi();
-  const response = ui.prompt(
-    'Set OpenAI API Key',
-    'Enter your OpenAI API Key (sk-...):',
-    ui.ButtonSet.OK_CANCEL
-  );
-
-  if (response.getSelectedButton() === ui.Button.OK) {
-    const apiKey = response.getResponseText().trim();
-    if (apiKey.startsWith('sk-')) {
-      PropertiesService.getScriptProperties().setProperty('OPENAI_API_KEY', apiKey);
-      ui.alert('Success', 'API Key saved successfully!', ui.ButtonSet.OK);
-    } else {
-      ui.alert('Error', 'Invalid API Key format. Must start with "sk-"', ui.ButtonSet.OK);
-    }
-  }
-}
-
-/**
- * Set OpenAI Model
- */
-function setModel() {
-  const ui = SpreadsheetApp.getUi();
-  const currentModel = PropertiesService.getScriptProperties().getProperty('OPENAI_MODEL') || 'gpt-5-mini';
-
-  const response = ui.prompt(
-    'Set OpenAI Model',
-    `Current model: ${currentModel}\n\nEnter model name (e.g., gpt-5-mini, gpt-5, gpt-4o):`,
-    ui.ButtonSet.OK_CANCEL
-  );
-
-  if (response.getSelectedButton() === ui.Button.OK) {
-    const model = response.getResponseText().trim();
-    if (model) {
-      PropertiesService.getScriptProperties().setProperty('OPENAI_MODEL', model);
-      ui.alert('Success', `Model set to: ${model}`, ui.ButtonSet.OK);
-    }
-  }
 }
 
 /**
@@ -150,8 +104,8 @@ function rewriteAllCommentedRows() {
       });
 
       try {
-        // Call OpenAI API for this batch
-        const batchResult = callOpenAIBatch(batch, headers);
+        // Call Backend API for this batch
+        const batchResult = callBackendAPIBatch(batch, headers);
 
         logToBacklog('API_RESPONSE', batchIndex, 'SUCCESS', 'Batch processed successfully', {
           rowsProcessed: batchResult.rows.length
@@ -205,6 +159,28 @@ function rewriteAllCommentedRows() {
       }
     }
 
+    // 8. Delete empty rows and columns
+    const totalRows = destSheet.getLastRow();
+    const totalCols = headers.length;
+    const maxRows = destSheet.getMaxRows();
+    const maxCols = destSheet.getMaxColumns();
+
+    // Delete empty rows (from totalRows+1 to maxRows)
+    if (maxRows > totalRows) {
+      destSheet.deleteRows(totalRows + 1, maxRows - totalRows);
+      logToBacklog('INFO', -1, 'CLEANUP', 'Deleted empty rows', {
+        deletedRows: maxRows - totalRows
+      });
+    }
+
+    // Delete empty columns (from totalCols+1 to maxCols)
+    if (maxCols > totalCols) {
+      destSheet.deleteColumns(totalCols + 1, maxCols - totalCols);
+      logToBacklog('INFO', -1, 'CLEANUP', 'Deleted empty columns', {
+        deletedColumns: maxCols - totalCols
+      });
+    }
+
     logToBacklog('INFO', -1, 'COMPLETED', 'Rewrite process completed', {
       totalProcessed,
       totalSuccess,
@@ -229,17 +205,19 @@ function rewriteAllCommentedRows() {
 }
 
 /**
- * Detect source sheet (highest VERn or active sheet)
+ * Detect source sheet (highest VERn or Whitepaper Plans)
  */
 function detectSourceSheet(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): GoogleAppsScript.Spreadsheet.Sheet {
   const sheets = ss.getSheets();
   let highestVer = 0;
   let highestVerSheet: GoogleAppsScript.Spreadsheet.Sheet | null = null;
+  let whitepaperPlansSheet: GoogleAppsScript.Spreadsheet.Sheet | null = null;
 
   for (const sheet of sheets) {
     const name = sheet.getName();
-    const match = name.match(/^VER(\d+)$/i);
 
+    // Check for VERn pattern
+    const match = name.match(/^VER(\d+)$/i);
     if (match) {
       const ver = parseInt(match[1]);
       if (ver > highestVer) {
@@ -247,9 +225,38 @@ function detectSourceSheet(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): Google
         highestVerSheet = sheet;
       }
     }
+
+    // Check for "Whitepaper Plans" sheet
+    if (name === 'Whitepaper Plans') {
+      whitepaperPlansSheet = sheet;
+    }
   }
 
-  return highestVerSheet || ss.getActiveSheet();
+  // Priority: highest VERn > VER1 > first sheet (excluding Backlog)
+  if (highestVerSheet) {
+    return highestVerSheet;
+  }
+
+  if (whitepaperPlansSheet) {
+    return whitepaperPlansSheet;
+  }
+
+  // Look for VER1 explicitly
+  for (const sheet of sheets) {
+    if (sheet.getName() === 'VER1') {
+      return sheet;
+    }
+  }
+
+  // Return first sheet that is not Backlog
+  for (const sheet of sheets) {
+    if (sheet.getName() !== 'Backlog') {
+      return sheet;
+    }
+  }
+
+  // Fallback to first sheet
+  return sheets[0];
 }
 
 /**
@@ -267,138 +274,67 @@ function generateNextVersion(currentName: string): string {
 }
 
 /**
- * Call OpenAI API for a batch of rows
+ * Call Backend API for a batch of rows
  */
-function callOpenAIBatch(
+function callBackendAPIBatch(
   batch: Array<{rowIndex: number, row: any[], comment: string}>,
   headers: any[]
 ): any {
-  const apiKey = PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY');
-  if (!apiKey) {
-    throw new Error('OpenAI API Key not set. Please use "Set API Key" menu.');
-  }
+  // Format batch data for backend API
+  const formattedBatch = batch.map((item) => {
+    const data: Record<string, string> = {};
+    headers.forEach((header, idx) => {
+      data[header.toString()] = item.row[idx]?.toString() || '';
+    });
 
-  const model = PropertiesService.getScriptProperties().getProperty('OPENAI_MODEL') || 'gpt-5-mini';
+    return {
+      row_index: item.rowIndex,
+      data: data,
+      comment: item.comment
+    };
+  });
 
-  // Build JSON Schema dynamically
-  const schema = buildJsonSchema(headers);
-
-  // Build system prompt
-  const systemPrompt = `あなたはエンタープライズ向けビジネス文書のリライト専門家です。
-
-**役割:**
-- クライアントのコメントに基づいて、ホワイトペーパー企画書の内容を改稿する
-- コメントの指示を最優先で積極的に反映する
-- 「もっと○○」という指示は、明確に変化が分かるレベルで対応する
-- ビジネス文書として自然で読みやすい文体を維持する
-
-**重要な原則:**
-1. コメントがない列は変更しない
-2. コメントの指示内容を最大限反映する
-3. 元の文脈や意図は保持しつつ、指示に沿って改稿する
-4. 専門用語は適切に使用する
-5. 読み手に伝わりやすい文章にする`;
-
-  // Build user prompt
-  const userPrompt = `以下の${batch.length}行分のデータをコメントに基づいて改稿してください。
-
-**データ:**
-${batch.map((item, idx) => {
-  const rowData = headers.map((h, i) => `${h}: ${item.row[i] || 'N/A'}`).join('\n');
-  return `【行${idx + 1}】(元の行番号: ${item.rowIndex})\nコメント: ${item.comment}\n${rowData}`;
-}).join('\n\n')}
-
-**指示:**
-- 各行のコメントに従って内容を改稿してください
-- コメントがない列は元のまま返してください
-- 返却形式は指定されたJSON Schemaに従ってください
-- 必ずrow_indexを含めてください`;
-
-  // Prepare request payload
   const payload = {
-    model: model,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ],
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'whitepaper_rewrite',
-        strict: true,
-        schema: schema
-      }
-    },
-    temperature: 0.7,
-    reasoning_effort: 'low'
+    batch: formattedBatch,
+    headers: headers.map(h => h.toString())
   };
 
   const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
     method: 'post',
     contentType: 'application/json',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`
-    },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true,
     timeout: 300000 // 5分
   };
 
   // Log request
-  logToBacklog('API_REQUEST', -1, 'SENDING', 'Sending request to OpenAI', {
-    model,
+  logToBacklog('API_REQUEST', -1, 'SENDING', 'Sending request to Backend API', {
     batchSize: batch.length,
     headers: headers.length
   });
 
-  const response = UrlFetchApp.fetch(OPENAI_API_URL, options);
+  const response = UrlFetchApp.fetch(`${BACKEND_API_URL}/api/rewrite/batch`, options);
   const statusCode = response.getResponseCode();
   const responseText = response.getContentText();
 
   if (statusCode >= 300) {
-    throw new Error(`OpenAI API error (${statusCode}): ${responseText}`);
+    throw new Error(`Backend API error (${statusCode}): ${responseText}`);
   }
 
   const result = JSON.parse(responseText);
 
-  if (!result.choices || !result.choices[0] || !result.choices[0].message) {
-    throw new Error('Invalid API response structure');
+  if (!result.success) {
+    throw new Error('Backend API returned error');
   }
 
-  const content = JSON.parse(result.choices[0].message.content);
+  logToBacklog('API_RESPONSE', -1, 'SUCCESS', 'Received response from Backend API', {
+    rowCount: result.data.rows.length,
+    tokensUsed: result.data.metadata.tokensUsed
+  });
 
-  return content;
+  return { rows: result.data.rows };
 }
 
-/**
- * Build JSON Schema dynamically from headers
- */
-function buildJsonSchema(headers: any[]): any {
-  const properties: any = {
-    row_index: { type: 'integer' }
-  };
-
-  for (const header of headers) {
-    const key = header.toString().trim();
-    properties[key] = { type: 'string' };
-  }
-
-  return {
-    type: 'object',
-    required: ['rows'],
-    properties: {
-      rows: {
-        type: 'array',
-        items: {
-          type: 'object',
-          required: ['row_index'],
-          properties: properties
-        }
-      }
-    },
-    additionalProperties: false
-  };
-}
 
 /**
  * Apply diff highlighting (red text for added content)
