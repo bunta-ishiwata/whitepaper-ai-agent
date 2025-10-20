@@ -1,0 +1,50 @@
+{
+  "name": "whitepaper-ai-agent",
+  "version": "0.1.0",
+  "description": "Autonomous development powered by Agentic OS",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "test": "vitest",
+    "lint": "eslint . --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "agents:parallel:exec": "npx miyabi agent run codegen"
+  },
+  "keywords": [
+    "agentic-os",
+    "autonomous"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@google-cloud/storage": "^7.0.0",
+    "@google-cloud/vision": "^4.0.0",
+    "@octokit/rest": "^21.0.2",
+    "dotenv": "^16.4.0",
+    "express": "^4.18.0",
+    "express-session": "^1.18.0",
+    "googleapis": "^134.0.0",
+    "marked": "^15.0.4",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^4.28.0",
+    "winston": "^3.17.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/express-session": "^1.18.0",
+    "@types/marked": "^6.0.0",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.10.0",
+    "@types/supertest": "^6.0.3",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^8.54.0",
+    "miyabi": "^0.15.0",
+    "supertest": "^7.1.4",
+    "tsx": "^4.7.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

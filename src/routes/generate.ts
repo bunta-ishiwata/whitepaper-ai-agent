@@ -261,11 +261,13 @@ router.post(
 
       // Step 6: Bind Google Apps Script to spreadsheet
       logger.info('Binding Google Apps Script to spreadsheet');
+      const backendApiUrl = process.env.BACKEND_API_URL || 'http://localhost:8080';
       const appsScriptService = new AppsScriptService(authenticatedClient);
 
       try {
         const { scriptId, projectUrl } = await appsScriptService.createAndBindScript(
-          spreadsheetId
+          spreadsheetId,
+          backendApiUrl
         );
         logger.info(`Apps Script bound successfully: ${scriptId}`);
         logger.info(`Script project URL: ${projectUrl}`);

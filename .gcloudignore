@@ -1,0 +1,14 @@
+.git
+node_modules/
+*.md
+!DEPLOYMENT.md
+.env
+dist/
+.DS_Store
+.vscode/
+coverage/
+.github/
+docs/
+test/
+*.test.ts
+*.spec.ts

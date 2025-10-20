@@ -1,0 +1,384 @@
+openapi: 3.0.3
+info:
+  title: Whitepaper AI Agent API
+  description: |
+    An autonomous AI-powered service for generating whitepaper plans based on sales materials,
+    target audience analysis, and keyword research. The API accepts multiple input formats
+    (PDFs, text, CSV) and generates structured whitepaper plans saved to Google Sheets.
+  version: 0.1.0
+  contact:
+    name: Whitepaper AI Agent Support
+    url: https://github.com/your-username/whitepaper-ai-agent
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: https://whitepaper-ai-agent-{project-id}.run.app
+    description: Production server on Google Cloud Run
+    variables:
+      project-id:
+        default: your-project-id
+        description: Your Google Cloud Project ID
+
+tags:
+  - name: Health
+    description: Service health and status endpoints
+  - name: Whitepaper
+    description: Whitepaper plan generation operations
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check endpoint
+      description: Returns the current server status, timestamp, and uptime information
+      operationId: getHealth
+      responses:
+        '200':
+          description: Server is healthy and running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+                timestamp: '2025-10-16T12:00:00.000Z'
+                uptime: 123.45
+
+  /:
+    get:
+      tags:
+        - Health
+      summary: API information endpoint
+      description: Returns basic API information and available endpoints
+      operationId: getRoot
+      responses:
+        '200':
+          description: API information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RootResponse'
+              example:
+                name: Whitepaper AI Agent API
+                version: 0.1.0
+                endpoints:
+                  health: /health
+                  generate: /generate (POST)
+
+  /generate:
+    post:
+      tags:
+        - Whitepaper
+      summary: Generate whitepaper plans
+      description: |
+        Generates structured whitepaper plans based on provided inputs (sales materials,
+        target audience info, and keywords). Supports multiple input formats including
+        PDF files, plain text, and CSV files. At least one input source must be provided.
+
+        The endpoint performs the following steps:
+        1. Uploads files to Google Cloud Storage
+        2. Extracts text from PDFs using Google Vision API
+        3. Generates plans using OpenAI GPT models
+        4. Creates a Google Spreadsheet with the results
+        5. Optionally moves the spreadsheet to a specified folder
+      operationId: generateWhitepaperPlans
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GenerateRequest'
+            encoding:
+              salesPdf:
+                contentType: application/pdf
+              targetPdf:
+                contentType: application/pdf
+              keywordsCsv:
+                contentType: text/csv, text/plain
+      responses:
+        '200':
+          description: Whitepaper plans generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateSuccessResponse'
+              example:
+                success: true
+                spreadsheetId: '1abc123def456ghi789jkl012mno345pqr678stu901'
+                spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/1abc123def456ghi789jkl012mno345pqr678stu901'
+                planCount: 3
+                plans:
+                  - title: 'AI-Driven Automation for Enterprise'
+                    section: 'Introduction'
+                    estimatedPages: 5
+                    priority: 1
+                    status: 'draft'
+                  - title: 'Implementation Guide'
+                    section: 'Technical Overview'
+                    estimatedPages: 8
+                    priority: 2
+                    status: 'draft'
+                  - title: 'Best Practices and Use Cases'
+                    section: 'Case Studies'
+                    estimatedPages: 6
+                    priority: 3
+                    status: 'draft'
+                metadata:
+                  duration: '5432ms'
+                  timestamp: '2025-10-16T12:00:00.000Z'
+        '400':
+          description: Bad request - Invalid input parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                noInput:
+                  summary: No input sources provided
+                  value:
+                    error: 'Bad Request'
+                    message: 'At least one input source (sales, target, or keywords) must be provided'
+                invalidPlanCount:
+                  summary: Invalid plan count
+                  value:
+                    error: 'Bad Request'
+                    message: 'planCount must be a number between 1 and 20'
+                invalidFileType:
+                  summary: Invalid file type
+                  value:
+                    error: 'Bad Request'
+                    message: 'Invalid file type: text/plain. Only PDF and CSV files are allowed.'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateErrorResponse'
+              example:
+                success: false
+                error: 'Internal Server Error'
+                message: 'Failed to generate whitepaper plans: OpenAI API error'
+                metadata:
+                  duration: '1234ms'
+                  timestamp: '2025-10-16T12:00:00.000Z'
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - uptime
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          description: Server health status
+        timestamp:
+          type: string
+          format: date-time
+          description: Current server timestamp in ISO 8601 format
+        uptime:
+          type: number
+          format: float
+          description: Server uptime in seconds
+          minimum: 0
+
+    RootResponse:
+      type: object
+      required:
+        - name
+        - version
+        - endpoints
+      properties:
+        name:
+          type: string
+          description: API name
+          example: 'Whitepaper AI Agent API'
+        version:
+          type: string
+          description: API version
+          example: '0.1.0'
+        endpoints:
+          type: object
+          description: Available API endpoints
+          properties:
+            health:
+              type: string
+              example: '/health'
+            generate:
+              type: string
+              example: '/generate (POST)'
+
+    GenerateRequest:
+      type: object
+      properties:
+        salesPdf:
+          type: string
+          format: binary
+          description: Sales material PDF file
+        salesText:
+          type: string
+          description: Sales material as plain text
+          example: 'Our product is an AI-powered automation platform that helps enterprises streamline workflows...'
+        targetPdf:
+          type: string
+          format: binary
+          description: Target audience PDF file
+        targetText:
+          type: string
+          description: Target audience information as plain text
+          example: 'Enterprise CTOs and IT decision makers seeking to modernize infrastructure...'
+        keywordsCsv:
+          type: string
+          format: binary
+          description: Keywords CSV file
+        keywordsText:
+          type: string
+          description: Comma-separated keywords
+          example: 'AI,machine learning,automation,enterprise,cloud computing'
+        planCount:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 3
+          description: Number of whitepaper plans to generate
+          example: 5
+        spreadsheetTitle:
+          type: string
+          description: Custom title for the generated Google Spreadsheet
+          example: 'Q4 2025 Whitepaper Plans'
+        folderId:
+          type: string
+          description: Google Drive folder ID to move the spreadsheet to
+          example: '1a2b3c4d5e6f7g8h9i0j'
+
+    WhitepaperPlanSummary:
+      type: object
+      required:
+        - title
+        - section
+        - estimatedPages
+        - priority
+        - status
+      properties:
+        title:
+          type: string
+          description: Whitepaper title
+          example: 'AI-Driven Automation for Enterprise'
+        section:
+          type: string
+          description: Section or category of the whitepaper
+          example: 'Introduction'
+        estimatedPages:
+          type: integer
+          minimum: 1
+          description: Estimated number of pages
+          example: 5
+        priority:
+          type: integer
+          minimum: 1
+          description: Priority ranking (1 is highest)
+          example: 1
+        status:
+          type: string
+          enum: [draft, in_progress, review, completed]
+          description: Current status of the whitepaper plan
+          example: 'draft'
+
+    ResponseMetadata:
+      type: object
+      required:
+        - duration
+        - timestamp
+      properties:
+        duration:
+          type: string
+          pattern: '^\d+ms$'
+          description: Request processing duration in milliseconds
+          example: '5432ms'
+        timestamp:
+          type: string
+          format: date-time
+          description: Response timestamp in ISO 8601 format
+          example: '2025-10-16T12:00:00.000Z'
+
+    GenerateSuccessResponse:
+      type: object
+      required:
+        - success
+        - spreadsheetId
+        - spreadsheetUrl
+        - planCount
+        - plans
+        - metadata
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+          description: Indicates successful operation
+        spreadsheetId:
+          type: string
+          description: Google Spreadsheet ID
+          example: '1abc123def456ghi789jkl012mno345pqr678stu901'
+        spreadsheetUrl:
+          type: string
+          format: uri
+          description: URL to view the generated Google Spreadsheet
+          example: 'https://docs.google.com/spreadsheets/d/1abc123def456ghi789jkl012mno345pqr678stu901'
+        planCount:
+          type: integer
+          minimum: 1
+          description: Number of plans generated
+          example: 3
+        plans:
+          type: array
+          description: Array of generated whitepaper plan summaries
+          items:
+            $ref: '#/components/schemas/WhitepaperPlanSummary'
+        metadata:
+          $ref: '#/components/schemas/ResponseMetadata'
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error type
+          example: 'Bad Request'
+        message:
+          type: string
+          description: Detailed error message
+          example: 'At least one input source (sales, target, or keywords) must be provided'
+
+    GenerateErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+        - message
+        - metadata
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+          description: Indicates failed operation
+        error:
+          type: string
+          description: Error type
+          example: 'Internal Server Error'
+        message:
+          type: string
+          description: Detailed error message
+          example: 'Failed to generate whitepaper plans: OpenAI API error'
+        metadata:
+          $ref: '#/components/schemas/ResponseMetadata'
